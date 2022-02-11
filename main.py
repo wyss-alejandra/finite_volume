@@ -6,7 +6,7 @@ discontinuity_point = 5
 
 i_order = 2  # Type of spatial reconstruction: 0 pwc, 1 pwl, 2 WENO5
 
-number_of_control_volumes = 50  # N
+number_of_control_volumes = 200  # N
 
 # Domain borders [a, b]
 a = 0
