@@ -1,5 +1,8 @@
 import math
+
+import fv_parameters as par
 import numpy as np
+import matplotlib.pyplot as plt
 
 
 class FvRk3Tvd:
@@ -61,6 +64,8 @@ class FvRk3Tvd:
         self.k_z = self.physical_data_k(z)
         self.v_z = self.physical_data_v(z)
         self.q_z = self.physical_data_q(z)
+
+        self.final_solution = np.zeros((n_control_volumes, 2))
 
     def discontinuity_point_function(self, x):
         if (x >= 0) & (x <= self.discontinuity_point):
@@ -180,34 +185,34 @@ class FvRk3Tvd:
 
         if self.i_order == 0:
 
-            for i in range(1, self.total_control_volumes - 1):  # For each control volume boundary
+            for i1 in range(1, self.total_control_volumes - 1):  # For each control volume boundary
 
-                u2 = u[i + 1, 0]
-                u1 = u[i, 0]
+                u2 = u[i1 + 1, 0]
+                u1 = u[i1, 0]
                 slope = self.slopes(u2, u1)
-                u_r_output[i] = u1 + slope * (z[i + 1, 0] - x[i, 0])
-                d_u_r_output[i] = slope
+                u_r_output[i1] = u1 + slope * (z[i1 + 1, 0] - x[i1, 0])
+                d_u_r_output[i1] = slope
 
-                source_gauss[i, 0], source_gauss[i, 1] = u1, u1
+                source_gauss[i1, 0], source_gauss[i1, 1] = u1, u1
 
         elif self.i_order == 1:  # Linear reconstruction
 
-            for i in range(1, self.total_control_volumes - 1):  # For each control volume
+            for i2 in range(1, self.total_control_volumes - 1):  # For each control volume
 
-                u2 = u[i, 0]
-                u1 = u[i - 1, 0]
+                u2 = u[i2, 0]
+                u1 = u[i2 - 1, 0]
                 slope1 = self.slopes(u2, u1)
-                u2 = u[i + 1, 0]
-                u1 = u[i, 0]
+                u2 = u[i2 + 1, 0]
+                u1 = u[i2, 0]
                 slope2 = self.slopes(u2, u1)
                 slope = min(slope1, slope2)  # search of minimum slope (slope)
 
-                u2 = u[i, 0]
-                u_l_output[i] = u2 + slope * (z[i, 0] - x[i, 0])
-                u_r_output[i] = u2 + slope * (z[i + 1, 0] - x[i, 0])
-                d_u_l_output[i], d_u_r_output[i] = slope, slope
+                u2 = u[i2, 0]
+                u_l_output[i2] = u2 + slope * (z[i2, 0] - x[i2, 0])
+                u_r_output[i2] = u2 + slope * (z[i2 + 1, 0] - x[i2, 0])
+                d_u_l_output[i2], d_u_r_output[i2] = slope, slope
 
-                source_gauss[i, 0], source_gauss[i, 1] = u2, u2
+                source_gauss[i2, 0], source_gauss[i2, 1] = u2, u2
 
         elif self.i_order == 2:  # WENO - 5
 
@@ -217,14 +222,14 @@ class FvRk3Tvd:
             c1 = 13 / 12
             c2 = 1 / 4
 
-            for i in range(2, self.total_control_volumes - 2):
+            for i3 in range(2, self.total_control_volumes - 2):
 
-                u_i = u[i, 0]
-                u_i_m1 = u[i - 1, 0]
-                u_i_m2 = u[i - 2, 0]
+                u_i = u[i3, 0]
+                u_i_m1 = u[i3 - 1, 0]
+                u_i_m2 = u[i3 - 2, 0]
 
-                u_i1 = u[i + 1, 0]
-                u_i2 = u[i + 2, 0]
+                u_i1 = u[i3 + 1, 0]
+                u_i2 = u[i3 + 2, 0]
 
                 u_r[2] = -7 / 6 * u_i_m1 + 11 / 6 * u_i + u_i_m2 / 3  # {i - 2, i - 1, i}
                 u_l[2] = 5 / 6 * u_i_m1 + 1 / 3 * u_i - u_i_m2 / 6
@@ -250,9 +255,9 @@ class FvRk3Tvd:
                 beta[2] = c1 * (u_i_m2 - 2 * u_i_m1 + u_i) ** 2 + c2 * (u_i_m2 - 4 * u_i_m1 + 3 * u_i) ** 2
 
                 # Right extrapolated values
-                u_r_output[i], d_u_r_output[i] = self.u_d_u_func(alpha_r, omega_r, d_r, u_r, d_u_r, eps, beta)
+                u_r_output[i3], d_u_r_output[i3] = self.u_d_u_func(alpha_r, omega_r, d_r, u_r, d_u_r, eps, beta)
                 # Left extrapolated values
-                u_l_output[i], d_u_l_output[i] = self.u_d_u_func(alpha_l, omega_l, d_l, u_l, d_u_l, eps, beta)
+                u_l_output[i3], d_u_l_output[i3] = self.u_d_u_func(alpha_l, omega_l, d_l, u_l, d_u_l, eps, beta)
 
                 # WENO FOR REACTIVE TERMS
                 # ######################### First Gaussian point #######################################################
@@ -269,7 +274,7 @@ class FvRk3Tvd:
                 general_sum = 0
                 for j in range(0, 2):
                     general_sum += omega_w[j] * u_q[j]
-                source_gauss[i, 1] = general_sum
+                source_gauss[i3, 1] = general_sum
 
                 # ######################### Second Gaussian point ######################################################
                 d_s[0] = (210 + math.sqrt(3)) / 1080
@@ -285,7 +290,7 @@ class FvRk3Tvd:
                 general_sum = 0
                 for j in range(0, 2):
                     general_sum += omega_w[j] * u_q[j]
-                source_gauss[i, 1] = general_sum
+                source_gauss[i3, 1] = general_sum
 
         output_dict = {
             'u_r': u_r_output,
@@ -339,7 +344,7 @@ class FvRk3Tvd:
 
         # REACTION Operator:
         for i in range(2, self.total_control_volumes - 2):
-            q_u = q_z[i] * 1 / 2 * (source_gauss[i, 0] + source_gauss[i, 1])
+            q_u = self.q_z[i] * 1 / 2 * (source_gauss[i, 0] + source_gauss[i, 1])
             l[i] = (f[i] - f[i - 1]) / self.h - q_u
 
         return l
@@ -351,109 +356,156 @@ class FvRk3Tvd:
 
         return u_ex
 
+    def initial_concentration_figure(self):
+        fig_, ax_ = plt.subplots(1, 1, figsize=(par.PRINT_WIDTH_LARGE, par.PRINT_HEIGHT_SMALL), dpi=300)
+
+        fig_.subplots_adjust(top=0.90)
+        fig_.subplots_adjust(bottom=0.50)
+
+        ax_.plot(self.x_fig, self.u_fig, linewidth=1.5, marker='o', markersize=1.5)
+
+        plt.xticks(rotation=45)
+
+        ax_.set_ylabel('Population Ratio')
+        ax_.set_xlabel('Date')
+
+        fig_.set_size_inches(par.PRINT_WIDTH, par.PRINT_HEIGHT)
+
+        ax_.title.set_text('Initial Concentration')
+        ax_.set_ylabel('Concentration')
+        ax_.set_xlabel('x')
+        ax_.tick_params(left=False, bottom=False)
+
+        return fig_
+
     def fv_rk3(self):
         # ############################################ Average of the initial conditions ###############################
-        for i in range(3, self.n_control_volumes + 3):
-            z1 = self.z[i, 0]
-            z2 = self.z[i + 1, 0]
+        for i1 in range(3, self.n_control_volumes + 3):
+            z1 = self.z[i1, 0]
+            z2 = self.z[i1 + 1, 0]
 
             solution = self.gauss_sol(z1=z1, z2=z2)
-            self.u_a[i, 0] = solution
+            self.u_a[i1, 0] = solution
 
-        u_fig = self.u_a[3:-3]
+        self.u_fig = self.u_a[3:-3]
 
         # Time step
         delta_t = 1000
 
-        for i in range(0, self.n_control_volumes):
+        for i2 in range(0, self.n_control_volumes):
 
-            if abs(self.v_z[i]) > 0:
-                delta_t_c = self.co * self.h / self.v_z[i]
+            if abs(self.v_z[i2]) > 0:
+                delta_t_c = self.co * self.h / self.v_z[i2]
                 if delta_t_c < delta_t:
                     delta_t = delta_t_c
             else:
                 delta_t = 1000000
 
-            if self.k_z[i] > 0:
-                delta_t_d = self.alpha * self.h * self.h / self.k_z[i]
+            if self.k_z[i2] > 0:
+                delta_t_d = self.alpha * self.h * self.h / self.k_z[i2]
                 if delta_t_d < delta_t:
                     delta_t = delta_t_d
-
-        n_t = math.floor(self.final_time / delta_t)
 
         # Coefficients for Runge - Kutta TVD
         c1 = 1 / 3
         c2 = delta_t / 4
         c3 = 2 * delta_t / 3
 
-        # ############################################ RK3-TVD Step 1 ##################################################
-        # Neumann homogeneous boundary conditions
-        # This is weird, is there another way to assign this???
-        self.u_a[2, 0] = self.u_a[3, 0]
-        self.u_a[1, 0] = self.u_a[4, 0]
-        self.u_a[0, 0] = self.u_a[5, 0]
-        # This is weird, is there another way to assign this??? NOT SURE ABOUT WHAT IS HAPPENING HERE
-        self.u_a[self.n_control_volumes + 3, 0] = self.u_a[self.n_control_volumes + 2, 1]
-        self.u_a[self.n_control_volumes + 4, 0] = self.u_a[self.n_control_volumes + 1, 1]
-        self.u_a[self.n_control_volumes + 5, 0] = self.u_a[self.n_control_volumes + 0, 1]
+        j = 1
+        for i3 in range(3, self.n_control_volumes + 3):
+            self.u_fig[j, 0] = self.u_a[i3, 0]
+            j += 1
 
-        recons_output = self.reconstruction(self.u_a, self.x_n, self.z)
-        u_r = recons_output['u_r']
-        u_l = recons_output['u_l']
-        d_u_r = recons_output['d_u_r']
-        d_u_l = recons_output['d_u_l']
-        source_gauss = recons_output['source_gauss']
+        j = 1
+        for i4 in range(3, self.n_control_volumes + 3):
+            self.x_fig[j, 0] = self.x_n[i4, 0]
+            j += 1
 
-        l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
+        t = 0
+        n_t = math.floor(self.final_time / delta_t)
+        for j in range(0, n_t):
+            t += delta_t
 
-        for i in range(2, self.n_control_volumes - 2):
-            self.u_a_aux[i, 0] = self.u_a[i, 0] + delta_t * l[i]
+            # ############################################ RK3-TVD Step 1 ##############################################
+            # Neumann homogeneous boundary conditions
+            # This is weird, is there another way to assign this???
+            self.u_a[2, 0] = self.u_a[3, 0]
+            self.u_a[1, 0] = self.u_a[4, 0]
+            self.u_a[0, 0] = self.u_a[5, 0]
+            # This is weird, is there another way to assign this??? NOT SURE ABOUT WHAT IS HAPPENING HERE
+            self.u_a[self.n_control_volumes + 3, 0] = self.u_a[self.n_control_volumes + 2, 1]
+            self.u_a[self.n_control_volumes + 4, 0] = self.u_a[self.n_control_volumes + 1, 1]
+            self.u_a[self.n_control_volumes + 5, 0] = self.u_a[self.n_control_volumes + 0, 1]
 
-        # ############################################ RK3-TVD Step 2 ##################################################
-        # Neumann homogeneous boundary conditions
-        self.u_a_aux[2, 0] = self.u_a_aux[4, 0]
-        self.u_a_aux[1, 0] = self.u_a_aux[5, 0]
-        self.u_a_aux[0, 0] = self.u_a_aux[6, 0]
-        self.u_a_aux[self.n_control_volumes + 3, 0] = self.u_a_aux[self.n_control_volumes + 2, 0]
-        self.u_a_aux[self.n_control_volumes + 4, 0] = self.u_a_aux[self.n_control_volumes + 1, 0]
-        self.u_a_aux[self.n_control_volumes + 5, 0] = self.u_a_aux[self.n_control_volumes, 0]
+            recons_output = self.reconstruction(self.u_a, self.x_n, self.z)
+            u_r = recons_output['u_r']
+            u_l = recons_output['u_l']
+            d_u_r = recons_output['d_u_r']
+            d_u_l = recons_output['d_u_l']
+            source_gauss = recons_output['source_gauss']
 
-        recons_output = self.reconstruction(self.u_a_aux, self.x_n, self.z)
-        u_r = recons_output['u_r']
-        u_l = recons_output['u_l']
-        d_u_r = recons_output['d_u_r']
-        d_u_l = recons_output['d_u_l']
-        source_gauss = recons_output['source_gauss']
+            l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
 
-        l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
+            for i in range(2, self.n_control_volumes - 2):
+                self.u_a_aux[i, 0] = self.u_a[i, 0] + delta_t * l[i]
 
-        for i in range(2, self.total_control_volumes - 2):
-            self.u_a_aux[i, 0] = 0.75 * self.u_a[i] + 0.25 * self.u_a_aux[i, 0] + c2 * l[i]
+            # ############################################ RK3-TVD Step 2 ##################################################
+            # Neumann homogeneous boundary conditions
+            self.u_a_aux[2, 0] = self.u_a_aux[4, 0]
+            self.u_a_aux[1, 0] = self.u_a_aux[5, 0]
+            self.u_a_aux[0, 0] = self.u_a_aux[6, 0]
+            self.u_a_aux[self.n_control_volumes + 3, 0] = self.u_a_aux[self.n_control_volumes + 2, 0]
+            self.u_a_aux[self.n_control_volumes + 4, 0] = self.u_a_aux[self.n_control_volumes + 1, 0]
+            self.u_a_aux[self.n_control_volumes + 5, 0] = self.u_a_aux[self.n_control_volumes, 0]
 
-        # ############################################ RK3-TVD Step 3 ##################################################
-        # Neumann homogeneous boundary conditions
-        self.u_a_aux[2, 0] = self.u_a_aux[3, 0]
-        self.u_a_aux[1, 0] = self.u_a_aux[4, 0]
-        self.u_a_aux[0, 0] = self.u_a_aux[5, 0]
-        self.u_a_aux[self.n_control_volumes + 3, 0] = self.u_a_aux[self.n_control_volumes + 3, 0]
-        self.u_a_aux[self.n_control_volumes + 4, 0] = self.u_a_aux[self.n_control_volumes + 2, 0]
-        self.u_a_aux[self.n_control_volumes + 5, 0] = self.u_a_aux[self.n_control_volumes + 1, 0]
+            recons_output = self.reconstruction(self.u_a_aux, self.x_n, self.z)
+            u_r = recons_output['u_r']
+            u_l = recons_output['u_l']
+            d_u_r = recons_output['d_u_r']
+            d_u_l = recons_output['d_u_l']
+            source_gauss = recons_output['source_gauss']
 
-        recons_output = self.reconstruction(self.u_a_aux, self.x_n, self.z)
-        u_r = recons_output['u_r']
-        u_l = recons_output['u_l']
-        d_u_r = recons_output['d_u_r']
-        d_u_l = recons_output['d_u_l']
-        source_gauss = recons_output['source_gauss']
+            l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
 
-        l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
+            for i in range(2, self.total_control_volumes - 2):
+                self.u_a_aux[i, 0] = 0.75 * self.u_a[i] + 0.25 * self.u_a_aux[i, 0] + c2 * l[i]
 
-        for i in range(2, self.total_control_volumes - 2):
-            self.u[i, 0] = c1 * (self.u_a[i, 0] + 2 * self.u_a_aux[i, 0]) + c3 * l[i]
-        for i in range(3, self.total_control_volumes - 2):
-            self.u_a[i, 0] = self.u[i, 0]
-            self.u_ex[i, 0] = self.solex(self.k_z[i], self.v_z[i], self.q_z[i], t, self.x_n[i])
+            # ############################################ RK3-TVD Step 3 ##################################################
+            # Neumann homogeneous boundary conditions
+            self.u_a_aux[2, 0] = self.u_a_aux[3, 0]
+            self.u_a_aux[1, 0] = self.u_a_aux[4, 0]
+            self.u_a_aux[0, 0] = self.u_a_aux[5, 0]
+            self.u_a_aux[self.n_control_volumes + 3, 0] = self.u_a_aux[self.n_control_volumes + 3, 0]
+            self.u_a_aux[self.n_control_volumes + 4, 0] = self.u_a_aux[self.n_control_volumes + 2, 0]
+            self.u_a_aux[self.n_control_volumes + 5, 0] = self.u_a_aux[self.n_control_volumes + 1, 0]
 
-        for i in range(0, self.n_control_volumes):
-            final_solution[i, 0] = self.x_fig[i]
-            final_solution[i, 1] = self.u_fig[i]
+            recons_output = self.reconstruction(self.u_a_aux, self.x_n, self.z)
+            u_r = recons_output['u_r']
+            u_l = recons_output['u_l']
+            d_u_r = recons_output['d_u_r']
+            d_u_l = recons_output['d_u_l']
+            source_gauss = recons_output['source_gauss']
+
+            l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
+
+            for ii in range(2, self.total_control_volumes - 2):
+                self.u[ii, 0] = c1 * (self.u_a[ii, 0] + 2 * self.u_a_aux[ii, 0]) + c3 * l[ii]
+
+            for ii in range(3, self.total_control_volumes - 2):
+                self.u_a[ii, 0] = self.u[ii, 0]
+                self.u_ex[ii, 0] = self.solex(self.k_z[ii], self.v_z[ii], self.q_z[ii], t, self.x_n[ii])
+
+            jj = 0
+            for ii in range(3, self.n_control_volumes + 3):
+                self.u_fig[jj, 0] = self.u_a[ii, 0]
+                self.u_ex_fig[jj, 0] = self.u_ex[ii, 0]
+                jj += 1
+
+            jj = 0
+            for ii in range(3, self.n_control_volumes + 3):
+                self.x_fig[jj, 0] = self.x_n[ii, 0]
+                jj += 1
+
+        for ii in range(0, self.n_control_volumes):
+            self.final_solution[ii, 0] = self.x_fig[ii]
+            self.final_solution[ii, 1] = self.u_fig[ii]
