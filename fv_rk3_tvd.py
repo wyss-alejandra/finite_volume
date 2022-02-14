@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 class FvRk3Tvd:
 
     def __init__(self, i_order, n_control_volumes, a, b, final_time, co, alpha,
-                 discontinuity_point, discontinuity_value_left, discontinuity_value_right):
+                 discontinuity_point, discontinuity_value_left, discontinuity_value_right, debug=True):
+
+        self.debug = debug
 
         self.discontinuity_point = discontinuity_point
         self.discontinuity_point_value_left = discontinuity_value_left
@@ -43,12 +45,15 @@ class FvRk3Tvd:
         self.u_fig = np.zeros(self.n_control_volumes)
         self.x_fig = np.zeros(self.n_control_volumes)
 
-        self.u_a_aux = np.empty([self.n_control_volumes, self.dimensions])
+        # self.u_a_aux = np.empty([self.n_control_volumes, self.dimensions])
+        self.u_a_aux = np.empty([self.total_control_volumes, self.dimensions])
+        self.u_ex = np.empty([self.total_control_volumes, self.dimensions])
+        self.u_ex_fig = np.empty([self.total_control_volumes, self.dimensions])
 
         # ############################################ x_n initialization ##############################################
         x_n_start = (self.a - self.h / 2) - 2 * self.h
         x_n_stop = -x_n_start + self.b
-        self.x_n = np.linspace(start=x_n_start, stop=x_n_stop, num=len(self.total_control_volumes)).reshape(
+        self.x_n = np.linspace(start=x_n_start, stop=x_n_stop, num=self.total_control_volumes).reshape(
             shape_total_control_volumes)
 
         self.x_fig = self.x_n[3:-3]
@@ -56,14 +61,15 @@ class FvRk3Tvd:
         # ############################################ z initialization ################################################
         z_start = (self.a - self.h) - 2 * self.h
         z_stop = self.b + 3 * self.h
-        self.z = np.linspace(start=z_start, stop=z_stop, num=len(z)).reshape(len(z), self.dimensions)
+        self.z = np.linspace(start=z_start, stop=z_stop, num=len(z))
 
         # ############################################ Physical data #######################################################
-        self.k_z, self.v_z, self.q_z = np.zeros_like(z), np.zeros_like(z), np.zeros_like(z)
+        self.k_z, self.v_z, self.q_z = np.zeros(self.n_control_volumes + 7), np.zeros(
+            self.n_control_volumes + 7), np.zeros(self.n_control_volumes + 7)
 
-        self.k_z = self.physical_data_k(z)
-        self.v_z = self.physical_data_v(z)
-        self.q_z = self.physical_data_q(z)
+        self.k_z = np.asarray([self.physical_data_k(z_) for z_ in z])
+        self.v_z = np.asarray([self.physical_data_v(z_) for z_ in z])
+        self.q_z = np.asarray([self.physical_data_q(z_) for z_ in z])
 
         self.final_solution = np.zeros((n_control_volumes, 2))
 
@@ -121,7 +127,7 @@ class FvRk3Tvd:
     @staticmethod
     def physical_data_v(x, constant_=True):
         if constant_:
-            return np.nan
+            return 1
         else:
             return 0.5 + abs(math.cos(x)) / 2
 
@@ -175,7 +181,7 @@ class FvRk3Tvd:
         alpha_r, alpha_l = np.zeros(3), np.zeros(3)  # alphaR, alphaL
         omega_r, omega_l = np.zeros(3), np.zeros(3)  # omegaR, omegaL
 
-        source_gauss = np.empty([3, 2])
+        source_gauss = np.empty([self.total_control_volumes, 2])
         beta = np.empty([3])
 
         d_s = np.empty([3])
@@ -193,7 +199,8 @@ class FvRk3Tvd:
                 u_r_output[i1] = u1 + slope * (z[i1 + 1, 0] - x[i1, 0])
                 d_u_r_output[i1] = slope
 
-                source_gauss[i1, 0], source_gauss[i1, 1] = u1, u1
+                source_gauss[i1, 0] = u1
+                source_gauss[i1, 1] = u1
 
         elif self.i_order == 1:  # Linear reconstruction
 
@@ -212,7 +219,8 @@ class FvRk3Tvd:
                 u_r_output[i2] = u2 + slope * (z[i2 + 1, 0] - x[i2, 0])
                 d_u_l_output[i2], d_u_r_output[i2] = slope, slope
 
-                source_gauss[i2, 0], source_gauss[i2, 1] = u2, u2
+                source_gauss[i2, 0] = u2
+                source_gauss[i2, 1] = u2
 
         elif self.i_order == 2:  # WENO - 5
 
@@ -274,7 +282,7 @@ class FvRk3Tvd:
                 general_sum = 0
                 for j in range(0, 2):
                     general_sum += omega_w[j] * u_q[j]
-                source_gauss[i3, 1] = general_sum
+                source_gauss[i3, 0] = general_sum
 
                 # ######################### Second Gaussian point ######################################################
                 d_s[0] = (210 + math.sqrt(3)) / 1080
@@ -297,7 +305,9 @@ class FvRk3Tvd:
             'u_l': u_l_output,
             'd_u_r': d_u_r_output,
             'd_u_l': d_u_l_output,
-            'source_gauss': u_l_output}
+            'source_gauss': source_gauss}
+
+        print("In reconstruction source gauss shape {}".format(source_gauss.shape)) if self.debug else None
 
         return output_dict
 
@@ -309,9 +319,9 @@ class FvRk3Tvd:
 
         fc_fo = np.zeros(self.total_control_volumes)
         fd_m = np.zeros(self.total_control_volumes)
-        l = np.zeros(self.total_control_volumes - 3)
+        l = np.zeros(self.total_control_volumes)
 
-        f = np.empty([3])
+        f = np.empty([self.total_control_volumes + 1])
 
         if self.i_order == 0:
             for i in range(2, self.total_control_volumes - 2):
@@ -327,7 +337,7 @@ class FvRk3Tvd:
         for i in range(2, self.total_control_volumes - 2):
             fc_lf[i] = (fc_r[i] + fc_l[i + 1]) / 2 + self.h / (2 * dt) * (u_r[i] - u_l[i + 1])
         for i in range(2, self.total_control_volumes - 2):
-            u_l_w = (u_l[i + 1, 1] + u_r[i, 1]) / 2 + dt / (2 * self.h) * (fc_r[i] - fc_l[i + 1])
+            u_l_w = (u_l[i + 1] + u_r[i]) / 2 + dt / (2 * self.h) * (fc_r[i] - fc_l[i + 1])
             fc_lw[i] = self.v_z[i + 1] * u_l_w
         for i in range(2, self.total_control_volumes - 2):
             fc_fo[i] = (fc_lw[i] + fc_lf[i]) / 2
@@ -340,12 +350,19 @@ class FvRk3Tvd:
             f[i] = fd_m[i] - fc_fo[i]
 
         f[0] = -fc_l[0] + fd_l[0]
-        f[self.total_control_volumes + 1] = -fc_l[self.total_control_volumes + 1] + fd_l[self.total_control_volumes + 1]
+        # f[self.total_control_volumes + 1] = -fc_l[self.total_control_volumes + 1] + fd_l[self.total_control_volumes + 1]
+
+        print("f shape {} fc_l shape {} and fd_l shape {}".format(f.shape, fc_l.shape,
+                                                                  fd_l.shape)) if self.debug else None
+
+        f[self.total_control_volumes - 1] = -fc_l[self.total_control_volumes - 1] + fd_l[self.total_control_volumes - 1]
 
         # REACTION Operator:
         for i in range(2, self.total_control_volumes - 2):
             q_u = self.q_z[i] * 1 / 2 * (source_gauss[i, 0] + source_gauss[i, 1])
             l[i] = (f[i] - f[i - 1]) / self.h - q_u
+
+        print("In opreconstruction source gauss shape {}".format(source_gauss.shape)) if self.debug else None
 
         return l
 
@@ -381,13 +398,11 @@ class FvRk3Tvd:
     def fv_rk3(self):
         # ############################################ Average of the initial conditions ###############################
         for i1 in range(3, self.n_control_volumes + 3):
-            z1 = self.z[i1, 0]
-            z2 = self.z[i1 + 1, 0]
+            z1 = self.z[i1]
+            z2 = self.z[i1 + 1]
 
             solution = self.gauss_sol(z1=z1, z2=z2)
-            self.u_a[i1, 0] = solution
-
-        self.u_fig = self.u_a[3:-3]
+            self.u_a[i1] = solution
 
         # Time step
         delta_t = 1000
@@ -411,20 +426,19 @@ class FvRk3Tvd:
         c2 = delta_t / 4
         c3 = 2 * delta_t / 3
 
-        j = 1
-        for i3 in range(3, self.n_control_volumes + 3):
-            self.u_fig[j, 0] = self.u_a[i3, 0]
-            j += 1
-
-        j = 1
-        for i4 in range(3, self.n_control_volumes + 3):
-            self.x_fig[j, 0] = self.x_n[i4, 0]
-            j += 1
+        self.u_fig = self.u_a[3:-3]
+        self.x_fig = self.x_n[3:-3]
 
         t = 0
         n_t = math.floor(self.final_time / delta_t)
+        print("n_t is {}".format(n_t)) if self.debug else None
         for j in range(0, n_t):
+
             t += delta_t
+
+            print("t is {}".format(t)) if self.debug else None
+
+            print("u_a shape is {}".format(self.u_a.shape)) if self.debug else None
 
             # ############################################ RK3-TVD Step 1 ##############################################
             # Neumann homogeneous boundary conditions
@@ -432,10 +446,13 @@ class FvRk3Tvd:
             self.u_a[2, 0] = self.u_a[3, 0]
             self.u_a[1, 0] = self.u_a[4, 0]
             self.u_a[0, 0] = self.u_a[5, 0]
+
+            print("uas initialization ", self.u_a[2, 0], self.u_a[3, 0], self.u_a[1, 0], self.u_a[4, 0], self.u_a[0, 0], self.u_a[5, 0]) if self.debug else None
+
             # This is weird, is there another way to assign this??? NOT SURE ABOUT WHAT IS HAPPENING HERE
-            self.u_a[self.n_control_volumes + 3, 0] = self.u_a[self.n_control_volumes + 2, 1]
-            self.u_a[self.n_control_volumes + 4, 0] = self.u_a[self.n_control_volumes + 1, 1]
-            self.u_a[self.n_control_volumes + 5, 0] = self.u_a[self.n_control_volumes + 0, 1]
+            self.u_a[self.n_control_volumes + 3, 0] = self.u_a[self.n_control_volumes + 2, 0]
+            self.u_a[self.n_control_volumes + 4, 0] = self.u_a[self.n_control_volumes + 1, 0]
+            self.u_a[self.n_control_volumes + 5, 0] = self.u_a[self.n_control_volumes + 0, 0]
 
             recons_output = self.reconstruction(self.u_a, self.x_n, self.z)
             u_r = recons_output['u_r']
@@ -443,6 +460,9 @@ class FvRk3Tvd:
             d_u_r = recons_output['d_u_r']
             d_u_l = recons_output['d_u_l']
             source_gauss = recons_output['source_gauss']
+
+            print("in fv_rk3 for j {} source gauss shape {}".format(j, source_gauss.shape)) if self.debug else None
+            # print(u_r, u_l, d_u_r, d_u_l) if self.debug else None
 
             l = self.op_reconstruction(dt=delta_t, u_r=u_r, u_l=u_l, d_u_r=d_u_r, d_u_l=d_u_l, source_gauss=source_gauss)
 
