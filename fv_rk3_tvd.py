@@ -409,6 +409,7 @@ class FvRk3Tvd:
 
         for i2 in range(0, self.n_control_volumes):
 
+            # This part is possibly calculating the dt delta_t based on the Courant-Friedrichs-Lewy (CFL) condition. Should confirm with AH.
             if abs(self.v_z[i2]) > 0:
                 delta_t_c = self.co * self.h / self.v_z[i2]
                 if delta_t_c < delta_t:
