@@ -1,3 +1,12 @@
+# https://philip-mocz.medium.com/create-your-own-finite-volume-fluid-simulation-with-python-part-2-boundary-conditions-source-bda6994b4645
+# Rayleigh-Taylor Instability
+# Occurs when a heavy fluid sits on top of a light fluid and is pulled down by gravity.
+# Setting boundary conditions by adding ghost cells.
+
+
+# Other types of boundary conditions are possible and may be implemented using ghost cells.
+# A common one is Dirichlet boundary conditions, where one gives the ghost cells a prescribed value.
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -10,7 +19,7 @@ Demonstrates gravity source term and Reflecting boundary condition
 """
 
 
-def get_conserved(rho, vx, vy, P, gamma, vol):
+def get_conserved(rho, vx, vy, p, gamma, vol):
     """ Calculate the conserved variable from the primitive
 
     rho      is matrix of cell densities
@@ -27,7 +36,7 @@ def get_conserved(rho, vx, vy, P, gamma, vol):
     mass = rho * vol
     momx = rho * vx * vol
     momy = rho * vy * vol
-    energy = (P / (gamma - 1) + 0.5 * rho * (vx ** 2 + vy ** 2)) * vol
+    energy = (p / (gamma - 1) + 0.5 * rho * (vx ** 2 + vy ** 2)) * vol
 
     return mass, momx, momy, energy
 
@@ -52,6 +61,7 @@ def get_primitive(mass, momx, momy, energy, gamma, vol):
     vy = momy / rho / vol
     p = (energy / vol - 0.5 * rho * (vx ** 2 + vy ** 2)) * (gamma - 1)
 
+    # Note that when calculating the primitive variables from the conservative state, the ghost cell values are set
     rho, vx, vy, p = set_ghost_cells(rho, vx, vy, p)
 
     return rho, vx, vy, p
@@ -72,6 +82,7 @@ def get_gradient(f, dx):
     f_dx = (np.roll(f, r, axis=0) - np.roll(f, l, axis=0)) / (2 * dx)
     f_dy = (np.roll(f, r, axis=1) - np.roll(f, l, axis=1)) / (2 * dx)
 
+    # Note that we are calculating the gradients, the ghost cell primitive variable gradients are also being set
     f_dx, f_dy = set_ghost_gradients(f_dx, f_dy)
 
     return f_dx, f_dy
@@ -199,6 +210,12 @@ def get_flux(rho_l, rho_r, vx_L, vx_r, vy_L, vy_r, p_l, p_r, gamma):
 def add_ghost_cells(rho, vx, vy, p):
     """
     Add ghost cells to the top and bottom
+
+    Ghost cells are added due to the boundary conditions.
+    Add a top and bottom layer of ghost cells to the domain.
+    This function adds a row to the top and bottom of the primitive variable simulation matrices (i.e., the density, velocity, and pressure)
+    prior to the time integration loop.
+
     rho      is matrix of cell densities
     vx       is matrix of cell x-velocity
     vy       is matrix of cell y-velocity
@@ -215,6 +232,10 @@ def add_ghost_cells(rho, vx, vy, p):
 def set_ghost_cells(rho, vx, vy, P):
     """
     Set ghost cells at the top and bottom
+
+    The ghost cells are set to be mirror reflections of the interior neighbors.
+    Mirror reflections means copy the value and changes the sign of the normal component (y-component) of the velocity.
+
     rho      is matrix of cell densities
     vx       is matrix of cell x-velocity
     vy       is matrix of cell y-velocity
@@ -237,19 +258,27 @@ def set_ghost_cells(rho, vx, vy, P):
 def set_ghost_gradients(f_dx, f_dy):
     """
     Set ghost cell y-gradients at the top and bottom to be reflections
+
+    This functions sets the gradients to be reflective, by negating their value.
+
     f_dx     is a matrix of derivative of f in the x-direction
     f_dy     is a matrix of derivative of f in the y-direction
     """
 
-    f_dy[:, 0] = -f_dy[:, 1]
+    f_dy[:, 0] = -f_dy[:, 1]  # [:, 0] is a ghost cell, and it is assigned to the neighbor value with a (-) change of sign -> negating their value
     f_dy[:, -1] = -f_dy[:, -2]
 
     return f_dx, f_dy
 
 
-def add_source_term(mass, momx, momy, Energy, g, dt):
+def add_source_term(mass, momx, momy, energy, g, dt):
     """
     Add gravitational source term to conservative variables
+
+    Updates the conservative variables Q with the sources given at a time-step delta_t
+    Source terms account for the change in momentum and energy due to the gravitational field
+    Note that this function updates only energy and momentum due to the above sentence
+
     Mass     is matrix of mass in cells
     Momx     is matrix of x-momentum in cells
     Momy     is matrix of y-momentum in cells
@@ -259,19 +288,26 @@ def add_source_term(mass, momx, momy, Energy, g, dt):
     dt       is time-step to progress solution
     """
 
-    Energy += dt * momy * g
+    energy += dt * momy * g  # note that the energy is updated before the momentum, in order to use the initial value of the momentum (because for momentum we need to use this new value)
     momy += dt * mass * g
 
-    return mass, momx, momy, Energy
+    return mass, momx, momy, energy
 
 
 def main():
     """ Finite Volume simulation """
 
+    # Uses a second-order approach to be consistent with the original time integration -> kick-drift-kick
+    # Add the source term contribution over half a time-step (delta_t/2), a "kick"
+    # Update the primitive variables
+    # Compute and add the fluid fluxes, a "drift"
+    # Complete the time-step with a final half-step "kick"
+
     # Simulation parameters
+    # 2D domain [0, 0.5] x [0, 1.5]
     n = 64  # resolution N x 3N
-    boxsize_x = 0.5
-    boxsize_y = 1.5
+    boxsize_x = 0.5  # 2D domain [0, 0.5]
+    boxsize_y = 1.5  # 2D domain [0, 1.5]
     gamma = 1.4  # ideal gas gamma
     courant_fac = 0.4
     t = 0
@@ -288,14 +324,16 @@ def main():
     y, x = np.meshgrid(ylin, xlin)
 
     # Generate Initial Conditions - heavy fluid on top of light, with perturbation
+    # This is a Rayleigh-Taylor Instability simulation
     g = -0.1  # gravity
     w0 = 0.0025
     p0 = 2.5
     rho = 1. + (y > 0.75)
-    vx = np.zeros(x.shape)
-    vy = w0 * (1 - np.cos(4 * np.pi * x)) * (1 - np.cos(4 * np.pi * y / 3))
-    p = p0 + g * (y - 0.75) * rho
+    vx = np.zeros(x.shape)  # The initial x-velocity is 0
+    vy = w0 * (1 - np.cos(4 * np.pi * x)) * (1 - np.cos(4 * np.pi * y / 3))  # The y-velocity has a single-mode perturbation
+    p = p0 + g * (y - 0.75) * rho  # Initial pressure
 
+    # After generating the initial conditions, we also add the ghost cells
     rho, vx, vy, p = add_ghost_cells(rho, vx, vy, p)
 
     # Get conserved variables
@@ -319,6 +357,7 @@ def main():
             plot_this_turn = True
 
         # Add Source (half-step)
+        # Add a half-step "kick" source term and update the primitive variables before the flux calculation
         mass, momx, momy, energy = add_source_term(mass, momx, momy, energy, g, dt / 2)
 
         # get Primitive variables
@@ -362,6 +401,7 @@ def main():
         energy = apply_fluxes(energy, flux_energy_x, flux_energy_y, dx, dt)
 
         # Add Source (half-step)
+        # Add another half-step "kick" after the flux calculation
         mass, momx, momy, energy = add_source_term(mass, momx, momy, energy, g, dt / 2)
 
         # update time

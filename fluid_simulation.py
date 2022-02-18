@@ -1,4 +1,6 @@
 # https://levelup.gitconnected.com/create-your-own-finite-volume-fluid-simulation-with-python-8f9eab0b8305
+# Kelvin-Helmholtz Instability
+# Periodic boundary conditions.
 
 # ######## Primitive variables ########
 # Density ρ
